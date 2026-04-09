@@ -33,6 +33,7 @@ let filteredBlobUrl = null;
 let originalBlobUrl = null;
 let decodedMono = null;
 let previewState = null;
+let lastMeasuredSpeed = 0;
 
 levelSlider.addEventListener("input", () => {
   levelValue.textContent = levelSlider.value;
@@ -172,9 +173,11 @@ async function renderOffline(samples, onProgress, onStatusChange) {
   source.connect(filterNode);
   filterNode.connect(offlineCtx.destination);
 
+  const startWall = performance.now();
+  let estimateTimer = null;
+
   const supportsCheckpoints = typeof offlineCtx.suspend === "function";
   if (supportsCheckpoints) {
-    const startWall = performance.now();
     const checkpointInterval = 2;
     const checkpoints = Math.floor(duration / checkpointInterval);
     for (let i = 1; i <= checkpoints; i++) {
@@ -183,18 +186,29 @@ async function renderOffline(samples, onProgress, onStatusChange) {
         const pct = Math.round((t / duration) * 100);
         const elapsedWall = (performance.now() - startWall) / 1000;
         const speed = t / elapsedWall;
+        lastMeasuredSpeed = speed;
         const remaining = (duration - t) / speed;
         onProgress(pct, `${pct}% — ~${formatTime(remaining)} remaining`);
         offlineCtx.resume();
       });
     }
   } else {
-    progressBar.classList.add("indeterminate");
+    const speed = lastMeasuredSpeed || 0.5;
+    const estimatedTotal = duration / speed;
+    estimateTimer = setInterval(() => {
+      const elapsed = (performance.now() - startWall) / 1000;
+      const pct = Math.min(95, Math.round((elapsed / estimatedTotal) * 100));
+      const remaining = Math.max(0, estimatedTotal - elapsed);
+      onProgress(pct, `~${pct}% — ~${formatTime(remaining)} remaining`);
+    }, 500);
   }
 
   source.start(0);
   const renderedBuffer = await offlineCtx.startRendering();
-  progressBar.classList.remove("indeterminate");
+  if (estimateTimer) clearInterval(estimateTimer);
+
+  const elapsedTotal = (performance.now() - startWall) / 1000;
+  if (duration > 0) lastMeasuredSpeed = duration / elapsedTotal;
   return renderedBuffer;
 }
 
