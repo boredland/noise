@@ -179,7 +179,8 @@ async function renderOffline(samples, checkpointInterval, onProgress) {
   source.connect(filterNode);
   filterNode.connect(offlineCtx.destination);
 
-  if (typeof offlineCtx.suspend === "function") {
+  const supportsCheckpoints = typeof offlineCtx.suspend === "function";
+  if (supportsCheckpoints) {
     const checkpoints = Math.floor(duration / checkpointInterval);
     for (let i = 1; i <= checkpoints; i++) {
       const t = i * checkpointInterval;
@@ -188,10 +189,13 @@ async function renderOffline(samples, checkpointInterval, onProgress) {
         offlineCtx.resume();
       });
     }
+  } else {
+    progressBar.classList.add("indeterminate");
   }
 
   source.start(0);
   const renderedBuffer = await offlineCtx.startRendering();
+  progressBar.classList.remove("indeterminate");
   core.destroy();
   return renderedBuffer;
 }

@@ -214,6 +214,17 @@
         border-radius: 4px;
       }
 
+      .progress-bar.indeterminate {
+        width: 30% !important;
+        animation: indeterminate 1.5s ease-in-out infinite;
+      }
+
+      @keyframes indeterminate {
+        0% { margin-left: 0%; }
+        50% { margin-left: 70%; }
+        100% { margin-left: 0%; }
+      }
+
       .progress-bar.done {
         background: var(--bar-done);
       }
