@@ -52,7 +52,7 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files.length) handleFile(fileInput.files[0]);
 });
 
-function handleFile(file) {
+async function handleFile(file) {
   selectedFile = file;
   decodedMono = null;
   dropZone.textContent = file.name;
@@ -60,6 +60,13 @@ function handleFile(file) {
   previewBtn.disabled = false;
   processBtn.disabled = false;
   errorEl.classList.remove("visible");
+
+  try {
+    const mono = await decodeFile();
+    const suggested = estimateNoiseLevel(mono);
+    levelSlider.value = suggested;
+    levelValue.textContent = suggested;
+  } catch {}
 }
 
 previewBtn.addEventListener("click", () => togglePreview());
@@ -239,6 +246,39 @@ async function processAudio() {
     console.error(err);
     showError(`Processing failed: ${err.message}`);
   }
+}
+
+function estimateNoiseLevel(samples) {
+  const windowSize = Math.floor(SAMPLE_RATE * 0.05);
+  const numWindows = Math.floor(samples.length / windowSize);
+  const rmsValues = new Float32Array(numWindows);
+
+  for (let w = 0; w < numWindows; w++) {
+    let sum = 0;
+    const offset = w * windowSize;
+    for (let i = 0; i < windowSize; i++) {
+      const s = samples[offset + i];
+      sum += s * s;
+    }
+    rmsValues[w] = Math.sqrt(sum / windowSize);
+  }
+
+  const sorted = Array.from(rmsValues).sort((a, b) => a - b);
+
+  const noiseFloor = sorted[Math.floor(numWindows * 0.1)];
+  const signalLevel = sorted[Math.floor(numWindows * 0.9)];
+
+  if (noiseFloor === 0 || signalLevel === 0) return 50;
+
+  const snrDb = 20 * Math.log10(signalLevel / noiseFloor);
+
+  // Low SNR (noisy) -> high reduction, high SNR (clean) -> low reduction
+  // SNR ~5dB  -> 90 (very noisy)
+  // SNR ~15dB -> 60 (moderate)
+  // SNR ~30dB -> 20 (fairly clean)
+  // SNR ~40dB+-> 10 (very clean)
+  const level = Math.round(Math.max(5, Math.min(95, 100 - snrDb * 2.5)));
+  return level;
 }
 
 function mixToMono(audioBuffer) {
