@@ -127,15 +127,35 @@ async function decodeFile() {
   return decodedMono;
 }
 
-function createCore() {
-  return new DeepFilterNet3Core({
-    sampleRate: SAMPLE_RATE,
-    noiseReductionLevel: parseInt(levelSlider.value),
-    assetConfig: {
-      cdnUrl: new URL("./model", window.location.href).toString(),
-    },
-  });
+const modelUrl = new URL("./model", window.location.href).toString();
+let preloadedCore = null;
+let preloadPromise = null;
+
+function preloadModel() {
+  if (preloadPromise) return preloadPromise;
+  preloadPromise = (async () => {
+    await swReady;
+    const core = new DeepFilterNet3Core({
+      sampleRate: SAMPLE_RATE,
+      noiseReductionLevel: 50,
+      assetConfig: { cdnUrl: modelUrl },
+    });
+    await core.initialize();
+    preloadedCore = core;
+  })();
+  return preloadPromise;
 }
+
+async function getInitializedCore() {
+  await preloadModel();
+  const core = preloadedCore;
+  preloadedCore = null;
+  preloadPromise = null;
+  core.setSuppressionLevel(parseInt(levelSlider.value));
+  return core;
+}
+
+preloadModel();
 
 async function togglePreview() {
   if (previewState) {
@@ -156,9 +176,7 @@ async function togglePreview() {
     const mono = await decodeFile();
 
     setProgress(20, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
-    await swReady;
-    const core = createCore();
-    await core.initialize();
+    const core = await getInitializedCore();
 
     const previewSamples = mono.length > PREVIEW_SECONDS * SAMPLE_RATE
       ? mono.slice(0, PREVIEW_SECONDS * SAMPLE_RATE)
@@ -253,9 +271,7 @@ async function processAudio() {
     const mono = await decodeFile();
 
     setProgress(15, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
-    await swReady;
-    const core = createCore();
-    await core.initialize();
+    const core = await getInitializedCore();
 
     setProgress(30, "Processing audio…", "0%");
 
