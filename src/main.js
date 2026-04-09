@@ -211,22 +211,18 @@ async function togglePreview() {
   errorEl.classList.remove("visible");
 
   try {
-    setProgress(10, "Decoding audio file…", "");
+    setProgress(0, "Decoding audio file…", "");
     const mono = await decodeFile();
-
-    setProgress(20, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
 
     const previewSamples = mono.length > PREVIEW_SECONDS * SAMPLE_RATE
       ? mono.slice(0, PREVIEW_SECONDS * SAMPLE_RATE)
       : mono;
 
-    setProgress(40, "Rendering preview…", "0%");
+    setProgress(0, "Rendering preview…", "0%");
 
     const renderedBuffer = await renderOffline(previewSamples, 10, (pct) => {
-      setProgress(40 + pct * 0.4, "Rendering preview…", `${pct}%`);
+      setProgress(pct, "Rendering preview…", `${pct}%`);
     });
-
-    setProgress(85, "Starting playback…", "");
 
     const previewDuration = previewSamples.length / SAMPLE_RATE;
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
@@ -281,17 +277,16 @@ async function processAudio() {
   progressBar.classList.remove("done");
 
   try {
-    setProgress(5, "Decoding audio file…", "");
+    setProgress(0, "Decoding audio file…", "");
     const mono = await decodeFile();
 
-    setProgress(15, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
-    setProgress(30, "Processing audio…", "0%");
+    setProgress(0, "Processing audio…", "0%");
 
     const renderedBuffer = await renderOffline(mono, 30, (pct) => {
-      setProgress(30 + pct * 0.65, "Processing audio…", `${pct}%`);
+      setProgress(pct, "Processing audio…", `${pct}%`);
     });
 
-    setProgress(98, "Encoding WAV…", "");
+    setProgress(95, "Encoding WAV…", "");
     const wavBlob = encodeWav(renderedBuffer.getChannelData(0), SAMPLE_RATE);
 
     revokeUrls();
