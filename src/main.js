@@ -412,6 +412,7 @@ async function togglePreview() {
 
     const startTime = ctx.currentTime;
     source.start(0);
+    setTitle("\u25B6\uFE0F");
 
     const tickProgress = () => {
       if (!previewState) return;
