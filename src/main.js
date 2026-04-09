@@ -164,7 +164,7 @@ async function getInitializedCore() {
 
 preloadModel();
 
-async function renderOffline(samples, checkpointInterval, onProgress) {
+async function renderOffline(samples, onProgress) {
   const core = await getInitializedCore();
   const duration = samples.length / SAMPLE_RATE;
 
@@ -181,11 +181,17 @@ async function renderOffline(samples, checkpointInterval, onProgress) {
 
   const supportsCheckpoints = typeof offlineCtx.suspend === "function";
   if (supportsCheckpoints) {
+    const startWall = performance.now();
+    const checkpointInterval = 5;
     const checkpoints = Math.floor(duration / checkpointInterval);
     for (let i = 1; i <= checkpoints; i++) {
       const t = i * checkpointInterval;
       offlineCtx.suspend(t).then(() => {
-        onProgress(Math.round((t / duration) * 100));
+        const pct = Math.round((t / duration) * 100);
+        const elapsedWall = (performance.now() - startWall) / 1000;
+        const speed = t / elapsedWall;
+        const remaining = (duration - t) / speed;
+        onProgress(pct, `${pct}% — ~${formatTime(remaining)} remaining`);
         offlineCtx.resume();
       });
     }
@@ -224,8 +230,8 @@ async function togglePreview() {
 
     setProgress(0, "Rendering preview…", "0%");
 
-    const renderedBuffer = await renderOffline(previewSamples, 10, (pct) => {
-      setProgress(pct, "Rendering preview…", `${pct}%`);
+    const renderedBuffer = await renderOffline(previewSamples, (pct, detail) => {
+      setProgress(pct, "Rendering preview…", detail);
     });
 
     const previewDuration = previewSamples.length / SAMPLE_RATE;
@@ -286,8 +292,8 @@ async function processAudio() {
 
     setProgress(0, "Processing audio…", "0%");
 
-    const renderedBuffer = await renderOffline(mono, 30, (pct) => {
-      setProgress(pct, "Processing audio…", `${pct}%`);
+    const renderedBuffer = await renderOffline(mono, (pct, detail) => {
+      setProgress(pct, "Processing audio…", detail);
     });
 
     setProgress(95, "Encoding WAV…", "");
