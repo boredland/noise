@@ -280,6 +280,17 @@
         20%, 60% { transform: rotate(-25deg) }
         40%, 80% { transform: rotate(10deg) }
       }
+      .browser-banner {
+        background: var(--accent-hover);
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.8125rem;
+        color: var(--fg);
+        display: none;
+      }
+
       .github-corner svg {
         fill: var(--corner-fill);
         color: var(--corner-color);
@@ -305,6 +316,10 @@
         Remove background noise from audio files using DeepFilterNet3 — runs
         entirely in your browser.
       </p>
+
+      <div class="browser-banner" id="browserBanner">
+        Processing will be significantly faster in Chrome or Safari. Consider switching for large files.
+      </div>
 
       <div class="card">
         <label>Audio file</label>

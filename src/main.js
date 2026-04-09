@@ -11,6 +11,12 @@ const MODEL_URL = new URL("./model", window.location.href).toString();
 
 const $ = (id) => document.getElementById(id);
 
+const isChromium = !!window.chrome;
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+if (!isChromium && !isSafari) {
+  $("browserBanner").style.display = "block";
+}
+
 const dropZone = $("dropZone");
 const fileInput = $("fileInput");
 const levelSlider = $("levelSlider");
