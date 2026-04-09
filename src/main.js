@@ -1,5 +1,5 @@
 import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
-import lamejs from "lamejs";
+import "lamejs/lame.all.js";
 import * as Mp4Muxer from "mp4-muxer";
 import * as WebmMuxer from "webm-muxer";
 
@@ -594,7 +594,7 @@ function floatToInt16(samples) {
 }
 
 function encodeMp3(samples, sampleRate) {
-  const mp3enc = new lamejs.Mp3Encoder(1, sampleRate, 192);
+  const mp3enc = new window.lamejs.Mp3Encoder(1, sampleRate, 192);
   const int16 = floatToInt16(samples);
 
   const chunks = [];
