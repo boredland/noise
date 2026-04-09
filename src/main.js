@@ -61,6 +61,12 @@ dropZone.addEventListener("drop", (e) => {
 fileInput.addEventListener("change", () => {
   if (fileInput.files.length) handleFile(fileInput.files[0]);
 });
+$("demoBtn").addEventListener("click", async () => {
+  $("demoBtn").disabled = true;
+  const response = await fetch("./demo.wav");
+  const blob = await response.blob();
+  handleFile(new File([blob], "demo_noisy_speech.wav", { type: "audio/wav" }));
+});
 
 async function handleFile(file) {
   selectedFile = file;
