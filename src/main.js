@@ -7,6 +7,7 @@ const swReady =
 
 const SAMPLE_RATE = 48000;
 const PREVIEW_SECONDS = 60;
+const MODEL_URL = new URL("./model", window.location.href).toString();
 
 const $ = (id) => document.getElementById(id);
 
@@ -29,6 +30,7 @@ const errorEl = $("error");
 
 let selectedFile = null;
 let filteredBlobUrl = null;
+let originalBlobUrl = null;
 let decodedMono = null;
 let previewState = null;
 
@@ -79,7 +81,10 @@ async function handleFile(file) {
     previewBtn.disabled = false;
     processBtn.disabled = false;
     progressSection.classList.remove("visible");
-  } catch {}
+  } catch (err) {
+    console.error(err);
+    showError(`Failed to analyze audio: ${err.message}`);
+  }
 }
 
 previewBtn.addEventListener("click", () => togglePreview());
@@ -90,8 +95,7 @@ resetBtn.addEventListener("click", () => {
   progressSection.classList.remove("visible");
   previewBtn.disabled = false;
   processBtn.disabled = false;
-  if (filteredBlobUrl) URL.revokeObjectURL(filteredBlobUrl);
-  filteredBlobUrl = null;
+  revokeUrls();
 });
 
 downloadBtn.addEventListener("click", () => {
@@ -102,6 +106,13 @@ downloadBtn.addEventListener("click", () => {
   a.download = `${baseName}_filtered.wav`;
   a.click();
 });
+
+function revokeUrls() {
+  if (filteredBlobUrl) URL.revokeObjectURL(filteredBlobUrl);
+  if (originalBlobUrl) URL.revokeObjectURL(originalBlobUrl);
+  filteredBlobUrl = null;
+  originalBlobUrl = null;
+}
 
 function showError(msg) {
   errorEl.textContent = msg;
@@ -127,8 +138,6 @@ async function decodeFile() {
   return decodedMono;
 }
 
-const modelUrl = new URL("./model", window.location.href).toString();
-let preloadedCore = null;
 let preloadPromise = null;
 
 function preloadModel() {
@@ -138,24 +147,52 @@ function preloadModel() {
     const core = new DeepFilterNet3Core({
       sampleRate: SAMPLE_RATE,
       noiseReductionLevel: 50,
-      assetConfig: { cdnUrl: modelUrl },
+      assetConfig: { cdnUrl: MODEL_URL },
     });
     await core.initialize();
-    preloadedCore = core;
+    return core;
   })();
   return preloadPromise;
 }
 
 async function getInitializedCore() {
-  await preloadModel();
-  const core = preloadedCore;
-  preloadedCore = null;
+  const core = await preloadModel();
   preloadPromise = null;
   core.setSuppressionLevel(parseInt(levelSlider.value));
   return core;
 }
 
 preloadModel();
+
+async function renderOffline(samples, checkpointInterval, onProgress) {
+  const core = await getInitializedCore();
+  const duration = samples.length / SAMPLE_RATE;
+
+  const offlineCtx = new OfflineAudioContext(1, samples.length, SAMPLE_RATE);
+  const filterNode = await core.createAudioWorkletNode(offlineCtx);
+
+  const source = offlineCtx.createBufferSource();
+  const buf = offlineCtx.createBuffer(1, samples.length, SAMPLE_RATE);
+  buf.getChannelData(0).set(samples);
+  source.buffer = buf;
+
+  source.connect(filterNode);
+  filterNode.connect(offlineCtx.destination);
+
+  const checkpoints = Math.floor(duration / checkpointInterval);
+  for (let i = 1; i <= checkpoints; i++) {
+    const t = i * checkpointInterval;
+    offlineCtx.suspend(t).then(() => {
+      onProgress(Math.round((t / duration) * 100));
+      offlineCtx.resume();
+    });
+  }
+
+  source.start(0);
+  const renderedBuffer = await offlineCtx.startRendering();
+  core.destroy();
+  return renderedBuffer;
+}
 
 async function togglePreview() {
   if (previewState) {
@@ -176,7 +213,6 @@ async function togglePreview() {
     const mono = await decodeFile();
 
     setProgress(20, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
-    const core = await getInitializedCore();
 
     const previewSamples = mono.length > PREVIEW_SECONDS * SAMPLE_RATE
       ? mono.slice(0, PREVIEW_SECONDS * SAMPLE_RATE)
@@ -184,36 +220,13 @@ async function togglePreview() {
 
     setProgress(40, "Rendering preview…", "0%");
 
-    const offlineCtx = new OfflineAudioContext(1, previewSamples.length, SAMPLE_RATE);
-    const filterNode = await core.createAudioWorkletNode(offlineCtx);
-
-    const offlineSource = offlineCtx.createBufferSource();
-    const offlineBuf = offlineCtx.createBuffer(1, previewSamples.length, SAMPLE_RATE);
-    offlineBuf.getChannelData(0).set(previewSamples);
-    offlineSource.buffer = offlineBuf;
-
-    offlineSource.connect(filterNode);
-    filterNode.connect(offlineCtx.destination);
-
-    const previewDuration = previewSamples.length / SAMPLE_RATE;
-    const checkpointInterval = 10;
-    const checkpoints = Math.floor(previewDuration / checkpointInterval);
-    for (let i = 1; i <= checkpoints; i++) {
-      const t = i * checkpointInterval;
-      offlineCtx.suspend(t).then(() => {
-        const pct = Math.round((t / previewDuration) * 100);
-        setProgress(40 + pct * 0.4, "Rendering preview…", `${pct}%`);
-        offlineCtx.resume();
-      });
-    }
-
-    offlineSource.start(0);
-    const renderedBuffer = await offlineCtx.startRendering();
-
-    core.destroy();
+    const renderedBuffer = await renderOffline(previewSamples, 10, (pct) => {
+      setProgress(40 + pct * 0.4, "Rendering preview…", `${pct}%`);
+    });
 
     setProgress(85, "Starting playback…", "");
 
+    const previewDuration = previewSamples.length / SAMPLE_RATE;
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
     const source = ctx.createBufferSource();
     source.buffer = renderedBuffer;
@@ -230,7 +243,7 @@ async function togglePreview() {
       previewState.raf = requestAnimationFrame(tickProgress);
     };
 
-    previewState = { ctx, source, core: null, raf: null };
+    previewState = { ctx, source, raf: null };
     tickProgress();
 
     source.onended = () => stopPreview();
@@ -245,7 +258,6 @@ function stopPreview() {
   if (previewState) {
     if (previewState.raf) cancelAnimationFrame(previewState.raf);
     try { previewState.source.stop(); } catch {}
-    if (previewState.core) previewState.core.destroy();
     previewState.ctx.close();
     previewState = null;
   }
@@ -271,48 +283,19 @@ async function processAudio() {
     const mono = await decodeFile();
 
     setProgress(15, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
-    const core = await getInitializedCore();
-
     setProgress(30, "Processing audio…", "0%");
 
-    const duration = mono.length / SAMPLE_RATE;
-    const offlineCtx = new OfflineAudioContext(1, mono.length, SAMPLE_RATE);
-    const filterNode = await core.createAudioWorkletNode(offlineCtx);
-
-    const source = offlineCtx.createBufferSource();
-    const buf = offlineCtx.createBuffer(1, mono.length, SAMPLE_RATE);
-    buf.getChannelData(0).set(mono);
-    source.buffer = buf;
-
-    source.connect(filterNode);
-    filterNode.connect(offlineCtx.destination);
-
-    const CHECKPOINT_INTERVAL = 30;
-    const checkpoints = Math.floor(duration / CHECKPOINT_INTERVAL);
-    for (let i = 1; i <= checkpoints; i++) {
-      const t = i * CHECKPOINT_INTERVAL;
-      offlineCtx.suspend(t).then(() => {
-        const pct = Math.round((t / duration) * 100);
-        setProgress(30 + pct * 0.65, "Processing audio…", `${pct}%`);
-        offlineCtx.resume();
-      });
-    }
-
-    source.start(0);
-
-    const renderedBuffer = await offlineCtx.startRendering();
-    const filtered = renderedBuffer.getChannelData(0);
-
-    core.destroy();
+    const renderedBuffer = await renderOffline(mono, 30, (pct) => {
+      setProgress(30 + pct * 0.65, "Processing audio…", `${pct}%`);
+    });
 
     setProgress(98, "Encoding WAV…", "");
-    const wavBlob = encodeWav(filtered, SAMPLE_RATE);
+    const wavBlob = encodeWav(renderedBuffer.getChannelData(0), SAMPLE_RATE);
 
-    if (filteredBlobUrl) URL.revokeObjectURL(filteredBlobUrl);
+    revokeUrls();
     filteredBlobUrl = URL.createObjectURL(wavBlob);
-
-    const originalUrl = URL.createObjectURL(selectedFile);
-    originalAudio.src = originalUrl;
+    originalBlobUrl = URL.createObjectURL(selectedFile);
+    originalAudio.src = originalBlobUrl;
     filteredAudio.src = filteredBlobUrl;
 
     progressBar.classList.add("done");
@@ -340,21 +323,13 @@ function estimateNoiseLevel(samples) {
   }
 
   const sorted = Array.from(rmsValues).sort((a, b) => a - b);
-
   const noiseFloor = sorted[Math.floor(numWindows * 0.1)];
   const signalLevel = sorted[Math.floor(numWindows * 0.9)];
 
   if (noiseFloor === 0 || signalLevel === 0) return 50;
 
   const snrDb = 20 * Math.log10(signalLevel / noiseFloor);
-
-  // Low SNR (noisy) -> high reduction, high SNR (clean) -> low reduction
-  // SNR ~5dB  -> 90 (very noisy)
-  // SNR ~15dB -> 60 (moderate)
-  // SNR ~30dB -> 20 (fairly clean)
-  // SNR ~40dB+-> 10 (very clean)
-  const level = Math.round(Math.max(5, Math.min(95, 100 - snrDb * 2.5)));
-  return level;
+  return Math.round(Math.max(5, Math.min(95, 100 - snrDb * 2.5)));
 }
 
 function mixToMono(audioBuffer) {
