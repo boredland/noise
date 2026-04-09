@@ -1,8 +1,9 @@
 import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
 
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js");
-}
+const swReady =
+  "serviceWorker" in navigator
+    ? navigator.serviceWorker.register("./sw.js").then(() => navigator.serviceWorker.ready)
+    : Promise.resolve();
 
 const SAMPLE_RATE = 48000;
 const PREVIEW_SECONDS = 60;
@@ -144,6 +145,7 @@ async function togglePreview() {
     const mono = await decodeFile();
 
     setProgress(30, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
+    await swReady;
     const core = createCore();
     await core.initialize();
 
@@ -218,6 +220,7 @@ async function processAudio() {
     const mono = await decodeFile();
 
     setProgress(15, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
+    await swReady;
     const core = createCore();
     await core.initialize();
 
