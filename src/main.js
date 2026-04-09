@@ -179,13 +179,15 @@ async function renderOffline(samples, checkpointInterval, onProgress) {
   source.connect(filterNode);
   filterNode.connect(offlineCtx.destination);
 
-  const checkpoints = Math.floor(duration / checkpointInterval);
-  for (let i = 1; i <= checkpoints; i++) {
-    const t = i * checkpointInterval;
-    offlineCtx.suspend(t).then(() => {
-      onProgress(Math.round((t / duration) * 100));
-      offlineCtx.resume();
-    });
+  if (typeof offlineCtx.suspend === "function") {
+    const checkpoints = Math.floor(duration / checkpointInterval);
+    for (let i = 1; i <= checkpoints; i++) {
+      const t = i * checkpointInterval;
+      offlineCtx.suspend(t).then(() => {
+        onProgress(Math.round((t / duration) * 100));
+        offlineCtx.resume();
+      });
+    }
   }
 
   source.start(0);
