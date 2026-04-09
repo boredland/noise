@@ -181,8 +181,13 @@
         margin-top: 0.5rem;
       }
 
-      .btn-secondary:hover {
+      .btn-secondary:hover:not(:disabled) {
         background: var(--btn-secondary-hover);
+      }
+
+      .btn-secondary:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
       }
 
       .progress-section {
