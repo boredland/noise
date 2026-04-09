@@ -1,5 +1,9 @@
 import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
 
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js");
+}
+
 const SAMPLE_RATE = 48000;
 const PREVIEW_SECONDS = 60;
 
