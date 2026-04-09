@@ -138,31 +138,22 @@ async function decodeFile() {
   return decodedMono;
 }
 
-let preloadPromise = null;
-
-function preloadModel() {
-  if (preloadPromise) return preloadPromise;
-  preloadPromise = (async () => {
-    await swReady;
-    const core = new DeepFilterNet3Core({
-      sampleRate: SAMPLE_RATE,
-      noiseReductionLevel: 50,
-      assetConfig: { cdnUrl: MODEL_URL },
-    });
-    await core.initialize();
-    return core;
-  })();
-  return preloadPromise;
-}
+const coreReady = (async () => {
+  await swReady;
+  const core = new DeepFilterNet3Core({
+    sampleRate: SAMPLE_RATE,
+    noiseReductionLevel: 50,
+    assetConfig: { cdnUrl: MODEL_URL },
+  });
+  await core.initialize();
+  return core;
+})();
 
 async function getInitializedCore() {
-  const core = await preloadModel();
-  preloadPromise = null;
+  const core = await coreReady;
   core.setSuppressionLevel(parseInt(levelSlider.value));
   return core;
 }
-
-preloadModel();
 
 async function renderOffline(samples, onProgress, onStatusChange) {
   onStatusChange?.("Initializing DeepFilterNet3…");
@@ -204,7 +195,6 @@ async function renderOffline(samples, onProgress, onStatusChange) {
   source.start(0);
   const renderedBuffer = await offlineCtx.startRendering();
   progressBar.classList.remove("indeterminate");
-  core.destroy();
   return renderedBuffer;
 }
 
