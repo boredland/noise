@@ -1,6 +1,7 @@
 import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
 
 const SAMPLE_RATE = 48000;
+const PREVIEW_SECONDS = 60;
 
 const $ = (id) => document.getElementById(id);
 
@@ -8,6 +9,7 @@ const dropZone = $("dropZone");
 const fileInput = $("fileInput");
 const levelSlider = $("levelSlider");
 const levelValue = $("levelValue");
+const previewBtn = $("previewBtn");
 const processBtn = $("processBtn");
 const progressSection = $("progressSection");
 const statusLabel = $("statusLabel");
@@ -22,6 +24,8 @@ const errorEl = $("error");
 
 let selectedFile = null;
 let filteredBlobUrl = null;
+let decodedMono = null;
+let previewState = null;
 
 levelSlider.addEventListener("input", () => {
   levelValue.textContent = levelSlider.value;
@@ -46,16 +50,21 @@ fileInput.addEventListener("change", () => {
 
 function handleFile(file) {
   selectedFile = file;
+  decodedMono = null;
   dropZone.textContent = file.name;
   dropZone.classList.add("has-file");
+  previewBtn.disabled = false;
   processBtn.disabled = false;
   errorEl.classList.remove("visible");
 }
 
+previewBtn.addEventListener("click", () => togglePreview());
 processBtn.addEventListener("click", () => processAudio());
 resetBtn.addEventListener("click", () => {
+  stopPreview();
   resultSection.classList.remove("visible");
   progressSection.classList.remove("visible");
+  previewBtn.disabled = false;
   processBtn.disabled = false;
   if (filteredBlobUrl) URL.revokeObjectURL(filteredBlobUrl);
   filteredBlobUrl = null;
@@ -74,6 +83,7 @@ function showError(msg) {
   errorEl.textContent = msg;
   errorEl.classList.add("visible");
   progressSection.classList.remove("visible");
+  previewBtn.disabled = false;
   processBtn.disabled = false;
 }
 
@@ -83,9 +93,98 @@ function setProgress(pct, label, detail) {
   if (detail !== undefined) statusDetail.textContent = detail;
 }
 
+async function decodeFile() {
+  if (decodedMono) return decodedMono;
+  const arrayBuffer = await selectedFile.arrayBuffer();
+  const decodeCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+  await decodeCtx.close();
+  decodedMono = mixToMono(audioBuffer);
+  return decodedMono;
+}
+
+function createCore() {
+  return new DeepFilterNet3Core({
+    sampleRate: SAMPLE_RATE,
+    noiseReductionLevel: parseInt(levelSlider.value),
+    assetConfig: {
+      cdnUrl: new URL("./model", window.location.href).toString(),
+    },
+  });
+}
+
+async function togglePreview() {
+  if (previewState) {
+    stopPreview();
+    return;
+  }
+
+  if (!selectedFile) return;
+
+  previewBtn.textContent = "Stop preview";
+  processBtn.disabled = true;
+  progressSection.classList.add("visible");
+  progressBar.classList.remove("done");
+  errorEl.classList.remove("visible");
+
+  try {
+    setProgress(10, "Decoding audio file…", "");
+    const mono = await decodeFile();
+
+    setProgress(30, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
+    const core = createCore();
+    await core.initialize();
+
+    setProgress(50, "Starting preview…", "Playing first 60s through filter");
+
+    const previewSamples = mono.length > PREVIEW_SECONDS * SAMPLE_RATE
+      ? mono.slice(0, PREVIEW_SECONDS * SAMPLE_RATE)
+      : mono;
+
+    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    const filterNode = await core.createAudioWorkletNode(ctx);
+
+    const source = ctx.createBufferSource();
+    const buf = ctx.createBuffer(1, previewSamples.length, SAMPLE_RATE);
+    buf.getChannelData(0).set(previewSamples);
+    source.buffer = buf;
+
+    source.connect(filterNode);
+    filterNode.connect(ctx.destination);
+    source.start(0);
+
+    progressBar.classList.add("done");
+    const previewDuration = previewSamples.length / SAMPLE_RATE;
+    setProgress(100, "Preview playing…", `${formatTime(previewDuration)} of filtered audio`);
+
+    previewState = { ctx, source, core };
+
+    source.onended = () => stopPreview();
+  } catch (err) {
+    console.error(err);
+    stopPreview();
+    showError(`Preview failed: ${err.message}`);
+  }
+}
+
+function stopPreview() {
+  if (previewState) {
+    try { previewState.source.stop(); } catch {}
+    previewState.core.destroy();
+    previewState.ctx.close();
+    previewState = null;
+  }
+  previewBtn.textContent = "Preview (first 60s)";
+  previewBtn.disabled = !selectedFile;
+  processBtn.disabled = !selectedFile;
+  progressSection.classList.remove("visible");
+}
+
 async function processAudio() {
   if (!selectedFile) return;
 
+  stopPreview();
+  previewBtn.disabled = true;
   processBtn.disabled = true;
   errorEl.classList.remove("visible");
   resultSection.classList.remove("visible");
@@ -94,27 +193,13 @@ async function processAudio() {
 
   try {
     setProgress(5, "Decoding audio file…", "");
-
-    const arrayBuffer = await selectedFile.arrayBuffer();
-    const decodeCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
-    await decodeCtx.close();
-
-    const mono = mixToMono(audioBuffer);
-    const duration = audioBuffer.duration;
+    const mono = await decodeFile();
 
     setProgress(15, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
-
-    const core = new DeepFilterNet3Core({
-      sampleRate: SAMPLE_RATE,
-      noiseReductionLevel: parseInt(levelSlider.value),
-      assetConfig: {
-        cdnUrl: new URL("./model", window.location.href).toString(),
-      },
-    });
+    const core = createCore();
     await core.initialize();
 
-    setProgress(30, "Processing audio…", "");
+    setProgress(30, "Processing audio…", "This may take a moment");
 
     const offlineCtx = new OfflineAudioContext(1, mono.length, SAMPLE_RATE);
     const filterNode = await core.createAudioWorkletNode(offlineCtx);
@@ -167,7 +252,6 @@ function mixToMono(audioBuffer) {
   }
   return mono;
 }
-
 
 function encodeWav(samples, sampleRate) {
   const numSamples = samples.length;
