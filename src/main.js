@@ -155,32 +155,54 @@ async function togglePreview() {
     setProgress(10, "Decoding audio file…", "");
     const mono = await decodeFile();
 
-    setProgress(30, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
+    setProgress(20, "Initializing DeepFilterNet3…", "Loading WASM + model (~15 MB)");
     await swReady;
     const core = createCore();
     await core.initialize();
-
-    setProgress(50, "Starting preview…", "Playing first 60s through filter");
 
     const previewSamples = mono.length > PREVIEW_SECONDS * SAMPLE_RATE
       ? mono.slice(0, PREVIEW_SECONDS * SAMPLE_RATE)
       : mono;
 
+    setProgress(40, "Rendering preview…", "0%");
+
+    const offlineCtx = new OfflineAudioContext(1, previewSamples.length, SAMPLE_RATE);
+    const filterNode = await core.createAudioWorkletNode(offlineCtx);
+
+    const offlineSource = offlineCtx.createBufferSource();
+    const offlineBuf = offlineCtx.createBuffer(1, previewSamples.length, SAMPLE_RATE);
+    offlineBuf.getChannelData(0).set(previewSamples);
+    offlineSource.buffer = offlineBuf;
+
+    offlineSource.connect(filterNode);
+    filterNode.connect(offlineCtx.destination);
+
+    const previewDuration = previewSamples.length / SAMPLE_RATE;
+    const checkpointInterval = 10;
+    const checkpoints = Math.floor(previewDuration / checkpointInterval);
+    for (let i = 1; i <= checkpoints; i++) {
+      const t = i * checkpointInterval;
+      offlineCtx.suspend(t).then(() => {
+        const pct = Math.round((t / previewDuration) * 100);
+        setProgress(40 + pct * 0.4, "Rendering preview…", `${pct}%`);
+        offlineCtx.resume();
+      });
+    }
+
+    offlineSource.start(0);
+    const renderedBuffer = await offlineCtx.startRendering();
+
+    core.destroy();
+
+    setProgress(85, "Starting playback…", "");
+
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const filterNode = await core.createAudioWorkletNode(ctx);
-
     const source = ctx.createBufferSource();
-    const buf = ctx.createBuffer(1, previewSamples.length, SAMPLE_RATE);
-    buf.getChannelData(0).set(previewSamples);
-    source.buffer = buf;
-
-    source.connect(filterNode);
-    filterNode.connect(ctx.destination);
+    source.buffer = renderedBuffer;
+    source.connect(ctx.destination);
 
     const startTime = ctx.currentTime;
     source.start(0);
-
-    const previewDuration = previewSamples.length / SAMPLE_RATE;
 
     const tickProgress = () => {
       if (!previewState) return;
@@ -190,7 +212,7 @@ async function togglePreview() {
       previewState.raf = requestAnimationFrame(tickProgress);
     };
 
-    previewState = { ctx, source, core, raf: null };
+    previewState = { ctx, source, core: null, raf: null };
     tickProgress();
 
     source.onended = () => stopPreview();
@@ -205,7 +227,7 @@ function stopPreview() {
   if (previewState) {
     if (previewState.raf) cancelAnimationFrame(previewState.raf);
     try { previewState.source.stop(); } catch {}
-    previewState.core.destroy();
+    if (previewState.core) previewState.core.destroy();
     previewState.ctx.close();
     previewState = null;
   }
