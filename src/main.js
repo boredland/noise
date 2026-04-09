@@ -261,6 +261,15 @@ async function togglePreview() {
     if (previewAbort?.signal.aborted) return;
 
     const previewDuration = previewSamples.length / SAMPLE_RATE;
+
+    revokeUrls();
+    filteredBlobUrl = URL.createObjectURL(encodeWav(renderedBuffer.getChannelData(0), SAMPLE_RATE));
+    originalBlobUrl = URL.createObjectURL(encodeWav(previewSamples, SAMPLE_RATE));
+    originalAudio.src = originalBlobUrl;
+    filteredAudio.src = filteredBlobUrl;
+    downloadBtn.style.display = "none";
+    resultSection.classList.add("visible");
+
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
     const source = ctx.createBufferSource();
     source.buffer = renderedBuffer;
@@ -338,6 +347,7 @@ async function processAudio() {
 
     progressBar.classList.add("done");
     setProgress(100, "Done!", "");
+    downloadBtn.style.display = "";
     resultSection.classList.add("visible");
   } catch (err) {
     console.error(err);
