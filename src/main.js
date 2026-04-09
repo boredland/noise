@@ -58,9 +58,7 @@ async function handleFile(file) {
   decodedMono = null;
   dropZone.textContent = file.name;
   dropZone.classList.add("has-file");
-  $("controlsSection").style.display = "";
-  previewBtn.disabled = false;
-  processBtn.disabled = false;
+  $("controlsSection").style.display = "none";
   errorEl.classList.remove("visible");
 
   try {
@@ -68,6 +66,9 @@ async function handleFile(file) {
     const suggested = estimateNoiseLevel(mono);
     levelSlider.value = suggested;
     levelValue.textContent = suggested;
+    $("controlsSection").style.display = "";
+    previewBtn.disabled = false;
+    processBtn.disabled = false;
   } catch {}
 }
 
