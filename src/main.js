@@ -11,21 +11,11 @@ const swReady =
 const SAMPLE_RATE = 48000;
 const PREVIEW_SECONDS = 60;
 const MODEL_URL = new URL("./model", window.location.href).toString();
+const HAS_AUDIO_ENCODER = typeof AudioEncoder !== "undefined";
+const SUPPORTED_OUTPUTS = ["wav", "mp3"];
+if (HAS_AUDIO_ENCODER) SUPPORTED_OUTPUTS.push("m4a", "ogg");
 
 const $ = (id) => document.getElementById(id);
-
-const isChromium = !!window.chrome;
-const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-if (!isChromium && !isSafari) {
-  $("browserBanner").style.display = "block";
-}
-if (typeof AudioEncoder === "undefined") {
-  for (const val of ["m4a", "ogg"]) {
-    const opt = formatSelect.querySelector(`[value="${val}"]`);
-    opt.disabled = true;
-    opt.textContent += " — not supported in this browser";
-  }
-}
 
 const dropZone = $("dropZone");
 const fileInput = $("fileInput");
@@ -43,11 +33,23 @@ const filteredAudio = $("filteredAudio");
 const downloadBtn = $("downloadBtn");
 const resetBtn = $("resetBtn");
 const errorEl = $("error");
-
 const normalizeCheck = $("normalizeCheck");
 const eqCheck = $("eqCheck");
 const voiceWarning = $("voiceWarning");
 const formatSelect = $("formatSelect");
+
+const isChromium = !!window.chrome;
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+if (!isChromium && !isSafari) {
+  $("browserBanner").style.display = "block";
+}
+if (!HAS_AUDIO_ENCODER) {
+  for (const val of ["m4a", "ogg"]) {
+    const opt = formatSelect.querySelector(`[value="${val}"]`);
+    opt.disabled = true;
+    opt.textContent += " — not supported in this browser";
+  }
+}
 
 let selectedFile = null;
 let filteredBlobUrl = null;
@@ -100,6 +102,8 @@ async function handleFile(file) {
   dropZone.textContent = file.name;
   dropZone.classList.add("has-file");
   errorEl.classList.remove("visible");
+
+  updateAutoFormatLabel();
 
   $("controlsSection").style.display = "";
   previewBtn.disabled = true;
@@ -267,10 +271,8 @@ async function renderOffline(samples, onProgress, onStatusChange) {
 }
 
 function detectSpeech(samples) {
-  // Use bandpass energy ratio: speech concentrates energy in 300-3400Hz.
-  // Apply simple Goertzel-like energy estimation on a few key bands.
   const windowSize = 2048;
-  const numWindows = Math.min(20, Math.floor(samples.length / windowSize));
+  const numWindows = Math.min(10, Math.floor(samples.length / windowSize));
 
   let speechBandTotal = 0;
   let fullBandTotal = 0;
@@ -278,8 +280,7 @@ function detectSpeech(samples) {
   for (let w = 0; w < numWindows; w++) {
     const offset = Math.floor((w / numWindows) * (samples.length - windowSize));
 
-    // Measure energy in specific frequency bands using Goertzel
-    for (let freq = 50; freq <= 8000; freq += 50) {
+    for (let freq = 50; freq <= 8000; freq += 100) {
       const k = Math.round(freq * windowSize / SAMPLE_RATE);
       const omega = (2 * Math.PI * k) / windowSize;
       const coeff = 2 * Math.cos(omega);
@@ -526,38 +527,68 @@ function mixToMono(audioBuffer) {
 }
 
 const FORMAT_EXT = { wav: "wav", mp3: "mp3", m4a: "m4a", ogg: "ogg" };
+const INPUT_TO_OUTPUT = {
+  mp3: "mp3",
+  m4a: "m4a", aac: "m4a", mp4: "m4a",
+  ogg: "ogg", opus: "ogg", webm: "ogg",
+};
 
 function resolveFormat() {
   const choice = formatSelect.value;
   if (choice !== "auto") return choice;
   if (!selectedFile) return "wav";
   const ext = selectedFile.name.split(".").pop().toLowerCase();
-  if (ext === "mp3") return "mp3";
-  if (ext === "m4a" || ext === "aac" || ext === "mp4") return "m4a";
-  if (ext === "ogg" || ext === "opus" || ext === "webm") return "ogg";
+  const mapped = INPUT_TO_OUTPUT[ext];
+  if (mapped && SUPPORTED_OUTPUTS.includes(mapped)) return mapped;
   return "wav";
+}
+
+function updateAutoFormatLabel() {
+  const autoOpt = formatSelect.querySelector('[value="auto"]');
+  const fmt = resolveFormat();
+  autoOpt.textContent = `Same as input (${FORMAT_EXT[fmt].toUpperCase()})`;
 }
 
 async function encodeAudio(samples, sampleRate) {
   const fmt = resolveFormat();
   if (fmt === "mp3") return encodeMp3(samples, sampleRate);
-  if (fmt === "m4a") return encodeM4a(samples, sampleRate);
-  if (fmt === "ogg") return encodeOgg(samples, sampleRate);
+  if (fmt === "m4a") return encodeWithWebCodecs(samples, sampleRate, {
+    MuxerClass: Mp4Muxer.Muxer,
+    TargetClass: Mp4Muxer.ArrayBufferTarget,
+    muxerOpts: { audio: { codec: "aac", sampleRate, numberOfChannels: 1 }, fastStart: "in-memory" },
+    codec: "mp4a.40.2",
+    bitrate: 192000,
+    frameSize: 1024,
+    mimeType: "audio/mp4",
+  });
+  if (fmt === "ogg") return encodeWithWebCodecs(samples, sampleRate, {
+    MuxerClass: WebmMuxer.Muxer,
+    TargetClass: WebmMuxer.ArrayBufferTarget,
+    muxerOpts: { type: "webm", audio: { codec: "A_OPUS", sampleRate, numberOfChannels: 1 } },
+    codec: "opus",
+    bitrate: 128000,
+    frameSize: 960,
+    mimeType: "audio/ogg",
+  });
   return encodeWav(samples, sampleRate);
 }
 
-function encodeMp3(samples, sampleRate) {
-  const mp3enc = new lamejs.Mp3Encoder(1, sampleRate, 192);
-  const blockSize = 1152;
+function floatToInt16(samples) {
   const int16 = new Int16Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
     int16[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7fff;
   }
+  return int16;
+}
+
+function encodeMp3(samples, sampleRate) {
+  const mp3enc = new lamejs.Mp3Encoder(1, sampleRate, 192);
+  const int16 = floatToInt16(samples);
 
   const chunks = [];
+  const blockSize = 1152;
   for (let i = 0; i < int16.length; i += blockSize) {
-    const block = int16.subarray(i, i + blockSize);
-    const buf = mp3enc.encodeBuffer(block);
+    const buf = mp3enc.encodeBuffer(int16.subarray(i, i + blockSize));
     if (buf.length > 0) chunks.push(buf);
   }
   const end = mp3enc.flush();
@@ -566,39 +597,26 @@ function encodeMp3(samples, sampleRate) {
   return new Blob(chunks, { type: "audio/mpeg" });
 }
 
-async function encodeM4a(samples, sampleRate) {
-  if (typeof AudioEncoder === "undefined") {
-    return encodeWav(samples, sampleRate);
-  }
+async function encodeWithWebCodecs(samples, sampleRate, config) {
+  if (!HAS_AUDIO_ENCODER) return encodeWav(samples, sampleRate);
 
-  const int16 = new Int16Array(samples.length);
-  for (let i = 0; i < samples.length; i++) {
-    int16[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7fff;
-  }
+  const target = new config.TargetClass();
+  const muxer = new config.MuxerClass({ target, ...config.muxerOpts });
 
-  const target = new Mp4Muxer.ArrayBufferTarget();
-  const muxer = new Mp4Muxer.Muxer({
-    target,
-    audio: { codec: "aac", sampleRate, numberOfChannels: 1 },
-    fastStart: "in-memory",
-  });
-
-  const chunks = [];
   const encoder = new AudioEncoder({
     output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
     error: (e) => console.error("AudioEncoder error:", e),
   });
 
   encoder.configure({
-    codec: "mp4a.40.2",
+    codec: config.codec,
     sampleRate,
     numberOfChannels: 1,
-    bitrate: 192000,
+    bitrate: config.bitrate,
   });
 
-  const frameSize = 1024;
-  for (let i = 0; i < samples.length; i += frameSize) {
-    const end = Math.min(i + frameSize, samples.length);
+  for (let i = 0; i < samples.length; i += config.frameSize) {
+    const end = Math.min(i + config.frameSize, samples.length);
     const frameData = new Float32Array(end - i);
     frameData.set(samples.subarray(i, end));
     const audioData = new AudioData({
@@ -617,60 +635,12 @@ async function encodeM4a(samples, sampleRate) {
   encoder.close();
   muxer.finalize();
 
-  return new Blob([target.buffer], { type: "audio/mp4" });
-}
-
-async function encodeOgg(samples, sampleRate) {
-  if (typeof AudioEncoder === "undefined") {
-    return encodeWav(samples, sampleRate);
-  }
-
-  const target = new WebmMuxer.ArrayBufferTarget();
-  const muxer = new WebmMuxer.Muxer({
-    target,
-    type: "webm",
-    audio: { codec: "A_OPUS", sampleRate, numberOfChannels: 1 },
-  });
-
-  const encoder = new AudioEncoder({
-    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
-    error: (e) => console.error("AudioEncoder error:", e),
-  });
-
-  encoder.configure({
-    codec: "opus",
-    sampleRate,
-    numberOfChannels: 1,
-    bitrate: 128000,
-  });
-
-  const frameSize = 960;
-  for (let i = 0; i < samples.length; i += frameSize) {
-    const end = Math.min(i + frameSize, samples.length);
-    const frameData = new Float32Array(end - i);
-    frameData.set(samples.subarray(i, end));
-    const audioData = new AudioData({
-      format: "f32",
-      sampleRate,
-      numberOfFrames: frameData.length,
-      numberOfChannels: 1,
-      timestamp: (i / sampleRate) * 1_000_000,
-      data: frameData,
-    });
-    encoder.encode(audioData);
-    audioData.close();
-  }
-
-  await encoder.flush();
-  encoder.close();
-  muxer.finalize();
-
-  return new Blob([target.buffer], { type: "audio/ogg" });
+  return new Blob([target.buffer], { type: config.mimeType });
 }
 
 function encodeWav(samples, sampleRate) {
-  const numSamples = samples.length;
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const int16 = floatToInt16(samples);
+  const buffer = new ArrayBuffer(44 + int16.byteLength);
   const view = new DataView(buffer);
 
   function writeString(offset, str) {
@@ -680,7 +650,7 @@ function encodeWav(samples, sampleRate) {
   }
 
   writeString(0, "RIFF");
-  view.setUint32(4, 36 + numSamples * 2, true);
+  view.setUint32(4, 36 + int16.byteLength, true);
   writeString(8, "WAVE");
   writeString(12, "fmt ");
   view.setUint32(16, 16, true);
@@ -691,12 +661,9 @@ function encodeWav(samples, sampleRate) {
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
   writeString(36, "data");
-  view.setUint32(40, numSamples * 2, true);
+  view.setUint32(40, int16.byteLength, true);
 
-  for (let i = 0; i < numSamples; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(44 + i * 2, s * 0x7fff, true);
-  }
+  new Int16Array(buffer, 44).set(int16);
 
   return new Blob([buffer], { type: "audio/wav" });
 }
