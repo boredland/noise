@@ -58,17 +58,27 @@ async function handleFile(file) {
   decodedMono = null;
   dropZone.textContent = file.name;
   dropZone.classList.add("has-file");
-  $("controlsSection").style.display = "none";
   errorEl.classList.remove("visible");
+
+  $("controlsSection").style.display = "";
+  previewBtn.disabled = true;
+  processBtn.disabled = true;
+  levelSlider.disabled = true;
+  statusLabel.textContent = "Analyzing audio…";
+  statusDetail.textContent = "";
+  progressBar.style.width = "0%";
+  progressBar.classList.remove("done");
+  progressSection.classList.add("visible");
 
   try {
     const mono = await decodeFile();
     const suggested = estimateNoiseLevel(mono);
     levelSlider.value = suggested;
     levelValue.textContent = suggested;
-    $("controlsSection").style.display = "";
+    levelSlider.disabled = false;
     previewBtn.disabled = false;
     processBtn.disabled = false;
+    progressSection.classList.remove("visible");
   } catch {}
 }
 
