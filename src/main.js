@@ -235,8 +235,9 @@ async function processAudio() {
     const core = createCore();
     await core.initialize();
 
-    setProgress(30, "Processing audio…", "This may take a moment");
+    setProgress(30, "Processing audio…", "0%");
 
+    const duration = mono.length / SAMPLE_RATE;
     const offlineCtx = new OfflineAudioContext(1, mono.length, SAMPLE_RATE);
     const filterNode = await core.createAudioWorkletNode(offlineCtx);
 
@@ -247,6 +248,18 @@ async function processAudio() {
 
     source.connect(filterNode);
     filterNode.connect(offlineCtx.destination);
+
+    const CHECKPOINT_INTERVAL = 5;
+    const checkpoints = Math.floor(duration / CHECKPOINT_INTERVAL);
+    for (let i = 1; i <= checkpoints; i++) {
+      const t = i * CHECKPOINT_INTERVAL;
+      offlineCtx.suspend(t).then(() => {
+        const pct = Math.round((t / duration) * 100);
+        setProgress(30 + pct * 0.65, "Processing audio…", `${pct}%`);
+        offlineCtx.resume();
+      });
+    }
+
     source.start(0);
 
     const renderedBuffer = await offlineCtx.startRendering();
