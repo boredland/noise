@@ -114,18 +114,24 @@ async function processAudio() {
     });
     await core.initialize();
 
-    setProgress(30, "Processing audio…", `0:00 / ${formatTime(duration)}`);
+    setProgress(30, "Processing audio…", "");
 
-    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const filterNode = await core.createAudioWorkletNode(ctx);
+    const offlineCtx = new OfflineAudioContext(1, mono.length, SAMPLE_RATE);
+    const filterNode = await core.createAudioWorkletNode(offlineCtx);
 
-    const filtered = await processOffline(ctx, filterNode, mono, duration, (pct, time) => {
-      const overall = 30 + pct * 0.65;
-      setProgress(overall, "Processing audio…", `${formatTime(time)} / ${formatTime(duration)}`);
-    });
+    const source = offlineCtx.createBufferSource();
+    const buf = offlineCtx.createBuffer(1, mono.length, SAMPLE_RATE);
+    buf.getChannelData(0).set(mono);
+    source.buffer = buf;
+
+    source.connect(filterNode);
+    filterNode.connect(offlineCtx.destination);
+    source.start(0);
+
+    const renderedBuffer = await offlineCtx.startRendering();
+    const filtered = renderedBuffer.getChannelData(0);
 
     core.destroy();
-    await ctx.close();
 
     setProgress(98, "Encoding WAV…", "");
     const wavBlob = encodeWav(filtered, SAMPLE_RATE);
@@ -162,45 +168,6 @@ function mixToMono(audioBuffer) {
   return mono;
 }
 
-function processOffline(ctx, filterNode, samples, duration, onProgress) {
-  return new Promise((resolve, reject) => {
-    const chunkSize = 128;
-    const totalSamples = samples.length;
-    const output = new Float32Array(totalSamples);
-    let writePos = 0;
-    let readPos = 0;
-
-    const source = ctx.createBufferSource();
-    const buf = ctx.createBuffer(1, totalSamples, SAMPLE_RATE);
-    buf.getChannelData(0).set(samples);
-    source.buffer = buf;
-
-    const recorder = ctx.createScriptProcessor(4096, 1, 1);
-    recorder.onaudioprocess = (e) => {
-      const input = e.inputBuffer.getChannelData(0);
-      const remaining = totalSamples - writePos;
-      const toCopy = Math.min(input.length, remaining);
-      output.set(input.subarray(0, toCopy), writePos);
-      writePos += toCopy;
-
-      const elapsed = writePos / SAMPLE_RATE;
-      onProgress(writePos / totalSamples, elapsed);
-
-      if (writePos >= totalSamples) {
-        source.stop();
-        recorder.disconnect();
-        filterNode.disconnect();
-        resolve(output);
-      }
-    };
-
-    source.connect(filterNode);
-    filterNode.connect(recorder);
-    recorder.connect(ctx.destination);
-
-    source.start(0);
-  });
-}
 
 function encodeWav(samples, sampleRate) {
   const numSamples = samples.length;
