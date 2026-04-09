@@ -108,6 +108,9 @@ async function processAudio() {
     const core = new DeepFilterNet3Core({
       sampleRate: SAMPLE_RATE,
       noiseReductionLevel: parseInt(levelSlider.value),
+      assetConfig: {
+        cdnUrl: new URL("./model", window.location.href).toString(),
+      },
     });
     await core.initialize();
 
