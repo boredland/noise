@@ -1,5 +1,5 @@
 import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
-import lamejs from "lamejs";
+import lamejs from "@breezystack/lamejs";
 import * as Mp4Muxer from "mp4-muxer";
 import * as WebmMuxer from "webm-muxer";
 
