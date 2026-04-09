@@ -164,8 +164,10 @@ async function getInitializedCore() {
 
 preloadModel();
 
-async function renderOffline(samples, onProgress) {
+async function renderOffline(samples, onProgress, onStatusChange) {
+  onStatusChange?.("Initializing DeepFilterNet3…");
   const core = await getInitializedCore();
+  onStatusChange?.("Processing audio…");
   const duration = samples.length / SAMPLE_RATE;
 
   const offlineCtx = new OfflineAudioContext(1, samples.length, SAMPLE_RATE);
@@ -182,7 +184,7 @@ async function renderOffline(samples, onProgress) {
   const supportsCheckpoints = typeof offlineCtx.suspend === "function";
   if (supportsCheckpoints) {
     const startWall = performance.now();
-    const checkpointInterval = 5;
+    const checkpointInterval = 2;
     const checkpoints = Math.floor(duration / checkpointInterval);
     for (let i = 1; i <= checkpoints; i++) {
       const t = i * checkpointInterval;
@@ -231,11 +233,11 @@ async function togglePreview() {
       ? mono.slice(0, PREVIEW_SECONDS * SAMPLE_RATE)
       : mono;
 
-    setProgress(0, "Rendering preview…", "0%");
+    setProgress(0, "Preparing…", "");
 
     const renderedBuffer = await renderOffline(previewSamples, (pct, detail) => {
       setProgress(pct, "Rendering preview…", detail);
-    });
+    }, (status) => setProgress(0, status, ""));
 
     if (previewAbort?.signal.aborted) return;
 
@@ -300,11 +302,11 @@ async function processAudio() {
     setProgress(0, "Decoding audio file…", "");
     const mono = await decodeFile();
 
-    setProgress(0, "Processing audio…", "0%");
+    setProgress(0, "Preparing…", "");
 
     const renderedBuffer = await renderOffline(mono, (pct, detail) => {
       setProgress(pct, "Processing audio…", detail);
-    });
+    }, (status) => setProgress(0, status, ""));
 
     setProgress(95, "Encoding WAV…", "");
     const wavBlob = encodeWav(renderedBuffer.getChannelData(0), SAMPLE_RATE);
