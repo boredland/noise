@@ -297,29 +297,31 @@
           <input type="file" id="fileInput" accept="audio/*" />
         </div>
 
-        <label style="margin-top: 1.25rem"
-          >Noise reduction level:
-          <span class="slider-value" id="levelValue">50</span>%</label
-        >
-        <div class="slider-row">
-          <span style="font-size: 0.75rem; color: var(--muted)">Light</span>
-          <input
-            type="range"
-            id="levelSlider"
-            min="0"
-            max="100"
-            value="50"
-          />
-          <span style="font-size: 0.75rem; color: var(--muted)">Heavy</span>
-        </div>
+        <div id="controlsSection" style="display: none">
+          <label style="margin-top: 1.25rem"
+            >Noise reduction level:
+            <span class="slider-value" id="levelValue">50</span>%</label
+          >
+          <div class="slider-row">
+            <span style="font-size: 0.75rem; color: var(--muted)">Light</span>
+            <input
+              type="range"
+              id="levelSlider"
+              min="0"
+              max="100"
+              value="50"
+            />
+            <span style="font-size: 0.75rem; color: var(--muted)">Heavy</span>
+          </div>
 
-        <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem">
-          <button class="btn-secondary" id="previewBtn" disabled style="margin-top: 0">
-            Preview (first 60s)
-          </button>
-          <button class="btn-primary" id="processBtn" disabled>
-            Process full audio
-          </button>
+          <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem">
+            <button class="btn-secondary" id="previewBtn" disabled style="margin-top: 0">
+              Preview (first 60s)
+            </button>
+            <button class="btn-primary" id="processBtn" disabled>
+              Process full audio
+            </button>
+          </div>
         </div>
 
         <div class="error" id="error"></div>

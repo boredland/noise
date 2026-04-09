@@ -57,6 +57,7 @@ async function handleFile(file) {
   decodedMono = null;
   dropZone.textContent = file.name;
   dropZone.classList.add("has-file");
+  $("controlsSection").style.display = "";
   previewBtn.disabled = false;
   processBtn.disabled = false;
   errorEl.classList.remove("visible");
