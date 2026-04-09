@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DeepFilter – Audio Noise Reduction</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: #0f1117;
+        color: #e1e4e8;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        padding: 2rem 1rem;
+      }
+
+      .container {
+        max-width: 560px;
+        width: 100%;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        margin-bottom: 0.25rem;
+      }
+
+      .subtitle {
+        color: #8b949e;
+        font-size: 0.875rem;
+        margin-bottom: 2rem;
+      }
+
+      .card {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+      }
+
+      label {
+        display: block;
+        font-size: 0.8125rem;
+        color: #8b949e;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+      }
+
+      .drop-zone {
+        border: 2px dashed #30363d;
+        border-radius: 6px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s;
+        color: #8b949e;
+        font-size: 0.875rem;
+      }
+
+      .drop-zone:hover,
+      .drop-zone.dragover {
+        border-color: #58a6ff;
+        background: rgba(88, 166, 255, 0.05);
+      }
+
+      .drop-zone.has-file {
+        border-color: #3fb950;
+        border-style: solid;
+        color: #e1e4e8;
+      }
+
+      .drop-zone input {
+        display: none;
+      }
+
+      .slider-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .slider-row input[type="range"] {
+        flex: 1;
+        accent-color: #58a6ff;
+        height: 6px;
+      }
+
+      .slider-value {
+        min-width: 3ch;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.875rem;
+      }
+
+      button {
+        width: 100%;
+        padding: 0.75rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .btn-primary {
+        background: #238636;
+        color: #fff;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: #2ea043;
+      }
+
+      .btn-primary:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .btn-secondary {
+        background: #21262d;
+        color: #e1e4e8;
+        border: 1px solid #30363d;
+        margin-top: 0.5rem;
+      }
+
+      .btn-secondary:hover {
+        background: #30363d;
+      }
+
+      .progress-section {
+        display: none;
+      }
+
+      .progress-section.visible {
+        display: block;
+      }
+
+      .progress-bar-bg {
+        background: #21262d;
+        border-radius: 4px;
+        height: 8px;
+        overflow: hidden;
+        margin-top: 0.75rem;
+      }
+
+      .progress-bar {
+        background: #58a6ff;
+        height: 100%;
+        width: 0%;
+        transition: width 0.3s;
+        border-radius: 4px;
+      }
+
+      .progress-bar.done {
+        background: #3fb950;
+      }
+
+      .status {
+        font-size: 0.8125rem;
+        color: #8b949e;
+        margin-top: 0.5rem;
+      }
+
+      .result-section {
+        display: none;
+      }
+
+      .result-section.visible {
+        display: block;
+      }
+
+      .audio-row {
+        margin-bottom: 1rem;
+      }
+
+      .audio-row span {
+        display: block;
+        font-size: 0.75rem;
+        color: #8b949e;
+        margin-bottom: 0.375rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      audio {
+        width: 100%;
+        height: 36px;
+      }
+
+      .error {
+        color: #f85149;
+        font-size: 0.8125rem;
+        margin-top: 0.5rem;
+        display: none;
+      }
+
+      .error.visible {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>DeepFilter</h1>
+      <p class="subtitle">
+        Remove background noise from audio files using DeepFilterNet3 — runs
+        entirely in your browser.
+      </p>
+
+      <div class="card">
+        <label>Audio file</label>
+        <div class="drop-zone" id="dropZone">
+          Drop an audio file here or click to select
+          <input type="file" id="fileInput" accept="audio/*" />
+        </div>
+
+        <label style="margin-top: 1.25rem"
+          >Noise reduction level:
+          <span class="slider-value" id="levelValue">50</span>%</label
+        >
+        <div class="slider-row">
+          <span style="font-size: 0.75rem; color: #8b949e">Light</span>
+          <input
+            type="range"
+            id="levelSlider"
+            min="0"
+            max="100"
+            value="50"
+          />
+          <span style="font-size: 0.75rem; color: #8b949e">Heavy</span>
+        </div>
+
+        <div style="margin-top: 1.25rem">
+          <button class="btn-primary" id="processBtn" disabled>
+            Process audio
+          </button>
+        </div>
+
+        <div class="error" id="error"></div>
+      </div>
+
+      <div class="card progress-section" id="progressSection">
+        <label id="statusLabel">Initializing DeepFilterNet3…</label>
+        <div class="progress-bar-bg">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <p class="status" id="statusDetail"></p>
+      </div>
+
+      <div class="card result-section" id="resultSection">
+        <div class="audio-row">
+          <span>Original</span>
+          <audio id="originalAudio" controls></audio>
+        </div>
+        <div class="audio-row">
+          <span>Filtered</span>
+          <audio id="filteredAudio" controls></audio>
+        </div>
+        <button class="btn-primary" id="downloadBtn">
+          Download filtered audio
+        </button>
+        <button class="btn-secondary" id="resetBtn">Process another file</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
