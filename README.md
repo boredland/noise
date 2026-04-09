@@ -2,7 +2,7 @@
 
 Browser-based audio noise reduction powered by [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet). Runs entirely client-side via WebAssembly — no uploads, no server.
 
-**[Try it live](https://boredland.github.io/deepfilter-web/)**
+**[Try it live](https://noise.jonas-strassel.de/)**
 
 ## Features
 
