@@ -280,6 +280,12 @@
         20%, 60% { transform: rotate(-25deg) }
         40%, 80% { transform: rotate(10deg) }
       }
+      .voice-warning {
+        font-size: 0.8125rem;
+        color: var(--danger);
+        margin-bottom: 0.5rem;
+      }
+
       .toggle-group {
         display: flex;
         flex-direction: column;
@@ -370,14 +376,13 @@
           </div>
 
           <label style="margin-top: 1.25rem">Voice optimization</label>
+          <div class="voice-warning" id="voiceWarning" style="display: none">
+            Audio does not appear to contain speech. Voice optimizations have been disabled.
+          </div>
           <div class="toggle-group">
             <label class="toggle-label">
               <input type="checkbox" id="normalizeCheck" checked />
               Loudness normalization
-            </label>
-            <label class="toggle-label">
-              <input type="checkbox" id="compressorCheck" checked />
-              Dynamic range compression
             </label>
             <label class="toggle-label">
               <input type="checkbox" id="eqCheck" checked />

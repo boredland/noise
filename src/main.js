@@ -35,8 +35,8 @@ const resetBtn = $("resetBtn");
 const errorEl = $("error");
 
 const normalizeCheck = $("normalizeCheck");
-const compressorCheck = $("compressorCheck");
 const eqCheck = $("eqCheck");
+const voiceWarning = $("voiceWarning");
 
 let selectedFile = null;
 let filteredBlobUrl = null;
@@ -45,9 +45,19 @@ let decodedMono = null;
 let previewState = null;
 let lastMeasuredSpeed = 0;
 
+function onSettingsChange() {
+  if (selectedFile && resultSection.classList.contains("visible")) {
+    previewBtn.disabled = false;
+    processBtn.disabled = false;
+  }
+}
+
 levelSlider.addEventListener("input", () => {
   levelValue.textContent = levelSlider.value;
+  onSettingsChange();
 });
+normalizeCheck.addEventListener("change", onSettingsChange);
+eqCheck.addEventListener("change", onSettingsChange);
 
 dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", (e) => {
@@ -95,6 +105,18 @@ async function handleFile(file) {
     const suggested = estimateNoiseLevel(mono);
     levelSlider.value = suggested;
     levelValue.textContent = suggested;
+
+    const isSpeech = detectSpeech(mono);
+    if (!isSpeech) {
+      normalizeCheck.checked = false;
+      eqCheck.checked = false;
+      voiceWarning.style.display = "";
+    } else {
+      normalizeCheck.checked = true;
+      eqCheck.checked = true;
+      voiceWarning.style.display = "none";
+    }
+
     levelSlider.disabled = false;
     previewBtn.disabled = false;
     processBtn.disabled = false;
@@ -231,12 +253,43 @@ async function renderOffline(samples, onProgress, onStatusChange) {
   return renderedBuffer;
 }
 
+function detectSpeech(samples) {
+  // Use bandpass energy ratio: speech concentrates energy in 300-3400Hz.
+  // Apply simple Goertzel-like energy estimation on a few key bands.
+  const windowSize = 2048;
+  const numWindows = Math.min(20, Math.floor(samples.length / windowSize));
+
+  let speechBandTotal = 0;
+  let fullBandTotal = 0;
+
+  for (let w = 0; w < numWindows; w++) {
+    const offset = Math.floor((w / numWindows) * (samples.length - windowSize));
+
+    // Measure energy in specific frequency bands using Goertzel
+    for (let freq = 50; freq <= 8000; freq += 50) {
+      const k = Math.round(freq * windowSize / SAMPLE_RATE);
+      const omega = (2 * Math.PI * k) / windowSize;
+      const coeff = 2 * Math.cos(omega);
+      let s0 = 0, s1 = 0, s2 = 0;
+      for (let n = 0; n < windowSize; n++) {
+        s0 = samples[offset + n] + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+      }
+      const power = s1 * s1 + s2 * s2 - coeff * s1 * s2;
+      fullBandTotal += power;
+      if (freq >= 300 && freq <= 3400) speechBandTotal += power;
+    }
+  }
+
+  return fullBandTotal > 0 && (speechBandTotal / fullBandTotal) > 0.4;
+}
+
 async function applyVoiceOptimization(samples) {
   const doNormalize = normalizeCheck.checked;
-  const doCompress = compressorCheck.checked;
   const doEq = eqCheck.checked;
 
-  if (!doNormalize && !doCompress && !doEq) return samples;
+  if (!doNormalize && !doEq) return samples;
 
   const offlineCtx = new OfflineAudioContext(1, samples.length, SAMPLE_RATE);
 
@@ -262,17 +315,6 @@ async function applyVoiceOptimization(samples) {
     presence.gain.value = 3;
     chain.connect(presence);
     chain = presence;
-  }
-
-  if (doCompress) {
-    const compressor = offlineCtx.createDynamicsCompressor();
-    compressor.threshold.value = -24;
-    compressor.knee.value = 12;
-    compressor.ratio.value = 4;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.25;
-    chain.connect(compressor);
-    chain = compressor;
   }
 
   if (doNormalize) {
