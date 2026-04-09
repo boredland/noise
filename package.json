@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "deepfilternet3-noise-filter": "^1.2.1",
+    "lamejs": "^1.2.1",
+    "mp4-muxer": "^5.2.2",
     "vite": "^8.0.8"
   }
 }

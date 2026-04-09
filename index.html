@@ -286,6 +286,16 @@
         margin-bottom: 0.5rem;
       }
 
+      .select-input {
+        width: 100%;
+        padding: 0.5rem;
+        border-radius: 6px;
+        border: 1px solid var(--card-border);
+        background: var(--bg);
+        color: var(--fg);
+        font-size: 0.8125rem;
+      }
+
       .toggle-group {
         display: flex;
         flex-direction: column;
@@ -305,6 +315,16 @@
 
       .toggle-label input[type="checkbox"] {
         accent-color: var(--accent);
+      }
+
+      .privacy-banner {
+        background: var(--card-bg);
+        border: 1px solid var(--success);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.8125rem;
+        color: var(--muted);
       }
 
       .browser-banner {
@@ -343,6 +363,10 @@
         Remove background noise from audio files using DeepFilterNet3 — runs
         entirely in your browser.
       </p>
+
+      <div class="privacy-banner">
+        All processing happens locally in your browser. Your audio files never leave your device.
+      </div>
 
       <div class="browser-banner" id="browserBanner">
         Processing will be significantly faster in Chrome or Safari. Consider switching for large files.
@@ -389,6 +413,14 @@
               Voice EQ (cut rumble, boost clarity)
             </label>
           </div>
+
+          <label style="margin-top: 1.25rem">Output format</label>
+          <select id="formatSelect" class="select-input">
+            <option value="auto">Same as input</option>
+            <option value="wav">WAV</option>
+            <option value="mp3">MP3</option>
+            <option value="m4a">M4A (AAC)</option>
+          </select>
 
           <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem">
             <button class="btn-secondary" id="previewBtn" disabled style="margin-top: 0">

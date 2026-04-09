@@ -1,4 +1,6 @@
 import { DeepFilterNet3Core } from "deepfilternet3-noise-filter";
+import lamejs from "lamejs";
+import * as Mp4Muxer from "mp4-muxer";
 
 const swReady =
   "serviceWorker" in navigator
@@ -15,6 +17,10 @@ const isChromium = !!window.chrome;
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 if (!isChromium && !isSafari) {
   $("browserBanner").style.display = "block";
+}
+if (typeof AudioEncoder === "undefined") {
+  formatSelect.querySelector('[value="m4a"]').disabled = true;
+  formatSelect.querySelector('[value="m4a"]').textContent = "M4A (AAC) — not supported in this browser";
 }
 
 const dropZone = $("dropZone");
@@ -37,6 +43,7 @@ const errorEl = $("error");
 const normalizeCheck = $("normalizeCheck");
 const eqCheck = $("eqCheck");
 const voiceWarning = $("voiceWarning");
+const formatSelect = $("formatSelect");
 
 let selectedFile = null;
 let filteredBlobUrl = null;
@@ -58,6 +65,7 @@ levelSlider.addEventListener("input", () => {
 });
 normalizeCheck.addEventListener("change", onSettingsChange);
 eqCheck.addEventListener("change", onSettingsChange);
+formatSelect.addEventListener("change", onSettingsChange);
 
 dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", (e) => {
@@ -145,7 +153,8 @@ downloadBtn.addEventListener("click", () => {
   const a = document.createElement("a");
   a.href = filteredBlobUrl;
   const baseName = selectedFile.name.replace(/\.[^.]+$/, "");
-  a.download = `${baseName}_filtered.wav`;
+  const fmt = resolveFormat();
+  a.download = `${baseName}_filtered.${FORMAT_EXT[fmt]}`;
   a.click();
 });
 
@@ -452,11 +461,11 @@ async function processAudio() {
     setProgress(90, "Optimizing voice…", "");
     const optimized = await applyVoiceOptimization(renderedBuffer.getChannelData(0));
 
-    setProgress(95, "Encoding WAV…", "");
-    const wavBlob = encodeWav(optimized, SAMPLE_RATE);
+    setProgress(95, `Encoding ${resolveFormat().toUpperCase()}…`, "");
+    const outputBlob = await encodeAudio(optimized, SAMPLE_RATE);
 
     revokeUrls();
-    filteredBlobUrl = URL.createObjectURL(wavBlob);
+    filteredBlobUrl = URL.createObjectURL(outputBlob);
     originalBlobUrl = URL.createObjectURL(selectedFile);
     originalAudio.src = originalBlobUrl;
     filteredAudio.src = filteredBlobUrl;
@@ -510,6 +519,100 @@ function mixToMono(audioBuffer) {
     }
   }
   return mono;
+}
+
+const FORMAT_EXT = { wav: "wav", mp3: "mp3", m4a: "m4a" };
+const FORMAT_MIME = { wav: "audio/wav", mp3: "audio/mpeg", m4a: "audio/mp4" };
+
+function resolveFormat() {
+  const choice = formatSelect.value;
+  if (choice !== "auto") return choice;
+  if (!selectedFile) return "wav";
+  const ext = selectedFile.name.split(".").pop().toLowerCase();
+  if (ext === "mp3") return "mp3";
+  if (ext === "m4a" || ext === "aac" || ext === "mp4") return "m4a";
+  return "wav";
+}
+
+async function encodeAudio(samples, sampleRate) {
+  const fmt = resolveFormat();
+  if (fmt === "mp3") return encodeMp3(samples, sampleRate);
+  if (fmt === "m4a") return encodeM4a(samples, sampleRate);
+  return encodeWav(samples, sampleRate);
+}
+
+function encodeMp3(samples, sampleRate) {
+  const mp3enc = new lamejs.Mp3Encoder(1, sampleRate, 192);
+  const blockSize = 1152;
+  const int16 = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    int16[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7fff;
+  }
+
+  const chunks = [];
+  for (let i = 0; i < int16.length; i += blockSize) {
+    const block = int16.subarray(i, i + blockSize);
+    const buf = mp3enc.encodeBuffer(block);
+    if (buf.length > 0) chunks.push(buf);
+  }
+  const end = mp3enc.flush();
+  if (end.length > 0) chunks.push(end);
+
+  return new Blob(chunks, { type: "audio/mpeg" });
+}
+
+async function encodeM4a(samples, sampleRate) {
+  if (typeof AudioEncoder === "undefined") {
+    return encodeWav(samples, sampleRate);
+  }
+
+  const int16 = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    int16[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7fff;
+  }
+
+  const target = new Mp4Muxer.ArrayBufferTarget();
+  const muxer = new Mp4Muxer.Muxer({
+    target,
+    audio: { codec: "aac", sampleRate, numberOfChannels: 1 },
+    fastStart: "in-memory",
+  });
+
+  const chunks = [];
+  const encoder = new AudioEncoder({
+    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    error: (e) => console.error("AudioEncoder error:", e),
+  });
+
+  encoder.configure({
+    codec: "mp4a.40.2",
+    sampleRate,
+    numberOfChannels: 1,
+    bitrate: 192000,
+  });
+
+  const frameSize = 1024;
+  for (let i = 0; i < samples.length; i += frameSize) {
+    const end = Math.min(i + frameSize, samples.length);
+    const frameData = new Float32Array(end - i);
+    frameData.set(samples.subarray(i, end));
+    const audioData = new AudioData({
+      format: "f32",
+      sampleRate,
+      numberOfFrames: frameData.length,
+      numberOfChannels: 1,
+      timestamp: (i / sampleRate) * 1_000_000,
+      data: frameData,
+    });
+    encoder.encode(audioData);
+    audioData.close();
+  }
+
+  await encoder.flush();
+  encoder.close();
+  muxer.finalize();
+
+  return new Blob([target.buffer], { type: "audio/mp4" });
 }
 
 function encodeWav(samples, sampleRate) {
