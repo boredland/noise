@@ -280,6 +280,27 @@
         20%, 60% { transform: rotate(-25deg) }
         40%, 80% { transform: rotate(10deg) }
       }
+      .toggle-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+      }
+
+      .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+        color: var(--fg);
+        font-weight: 400;
+        cursor: pointer;
+        margin-bottom: 0;
+      }
+
+      .toggle-label input[type="checkbox"] {
+        accent-color: var(--accent);
+      }
+
       .browser-banner {
         background: var(--accent-hover);
         border: 1px solid var(--accent);
@@ -346,6 +367,22 @@
               value="50"
             />
             <span style="font-size: 0.75rem; color: var(--muted)">Heavy</span>
+          </div>
+
+          <label style="margin-top: 1.25rem">Voice optimization</label>
+          <div class="toggle-group">
+            <label class="toggle-label">
+              <input type="checkbox" id="normalizeCheck" checked />
+              Loudness normalization
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="compressorCheck" checked />
+              Dynamic range compression
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="eqCheck" checked />
+              Voice EQ (cut rumble, boost clarity)
+            </label>
           </div>
 
           <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem">

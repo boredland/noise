@@ -34,6 +34,10 @@ const downloadBtn = $("downloadBtn");
 const resetBtn = $("resetBtn");
 const errorEl = $("error");
 
+const normalizeCheck = $("normalizeCheck");
+const compressorCheck = $("compressorCheck");
+const eqCheck = $("eqCheck");
+
 let selectedFile = null;
 let filteredBlobUrl = null;
 let originalBlobUrl = null;
@@ -227,6 +231,68 @@ async function renderOffline(samples, onProgress, onStatusChange) {
   return renderedBuffer;
 }
 
+async function applyVoiceOptimization(samples) {
+  const doNormalize = normalizeCheck.checked;
+  const doCompress = compressorCheck.checked;
+  const doEq = eqCheck.checked;
+
+  if (!doNormalize && !doCompress && !doEq) return samples;
+
+  const offlineCtx = new OfflineAudioContext(1, samples.length, SAMPLE_RATE);
+
+  const buf = offlineCtx.createBuffer(1, samples.length, SAMPLE_RATE);
+  buf.getChannelData(0).set(samples);
+  const source = offlineCtx.createBufferSource();
+  source.buffer = buf;
+
+  let chain = source;
+
+  if (doEq) {
+    const highpass = offlineCtx.createBiquadFilter();
+    highpass.type = "highpass";
+    highpass.frequency.value = 80;
+    highpass.Q.value = 0.7;
+    chain.connect(highpass);
+    chain = highpass;
+
+    const presence = offlineCtx.createBiquadFilter();
+    presence.type = "peaking";
+    presence.frequency.value = 3000;
+    presence.Q.value = 1.0;
+    presence.gain.value = 3;
+    chain.connect(presence);
+    chain = presence;
+  }
+
+  if (doCompress) {
+    const compressor = offlineCtx.createDynamicsCompressor();
+    compressor.threshold.value = -24;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    chain.connect(compressor);
+    chain = compressor;
+  }
+
+  if (doNormalize) {
+    let peak = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const abs = Math.abs(samples[i]);
+      if (abs > peak) peak = abs;
+    }
+    const gain = offlineCtx.createGain();
+    gain.gain.value = peak > 0 ? 0.95 / peak : 1;
+    chain.connect(gain);
+    chain = gain;
+  }
+
+  chain.connect(offlineCtx.destination);
+  source.start(0);
+  const rendered = await offlineCtx.startRendering();
+  return rendered.getChannelData(0);
+}
+
 let previewAbort = null;
 
 async function togglePreview() {
@@ -262,8 +328,11 @@ async function togglePreview() {
 
     const previewDuration = previewSamples.length / SAMPLE_RATE;
 
+    setProgress(95, "Optimizing voice…", "");
+    const optimized = await applyVoiceOptimization(renderedBuffer.getChannelData(0));
+
     revokeUrls();
-    filteredBlobUrl = URL.createObjectURL(encodeWav(renderedBuffer.getChannelData(0), SAMPLE_RATE));
+    filteredBlobUrl = URL.createObjectURL(encodeWav(optimized, SAMPLE_RATE));
     originalBlobUrl = URL.createObjectURL(encodeWav(previewSamples, SAMPLE_RATE));
     originalAudio.src = originalBlobUrl;
     filteredAudio.src = filteredBlobUrl;
@@ -271,8 +340,10 @@ async function togglePreview() {
     resultSection.classList.add("visible");
 
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    const playBuf = ctx.createBuffer(1, optimized.length, SAMPLE_RATE);
+    playBuf.getChannelData(0).set(optimized);
     const source = ctx.createBufferSource();
-    source.buffer = renderedBuffer;
+    source.buffer = playBuf;
     source.connect(ctx.destination);
 
     const startTime = ctx.currentTime;
@@ -336,8 +407,11 @@ async function processAudio() {
       setProgress(pct, "Processing audio…", detail);
     }, (status) => setProgress(0, status, ""));
 
+    setProgress(90, "Optimizing voice…", "");
+    const optimized = await applyVoiceOptimization(renderedBuffer.getChannelData(0));
+
     setProgress(95, "Encoding WAV…", "");
-    const wavBlob = encodeWav(renderedBuffer.getChannelData(0), SAMPLE_RATE);
+    const wavBlob = encodeWav(optimized, SAMPLE_RATE);
 
     revokeUrls();
     filteredBlobUrl = URL.createObjectURL(wavBlob);
