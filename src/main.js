@@ -324,7 +324,7 @@ async function applyVoiceOptimization(samples) {
       if (abs > peak) peak = abs;
     }
     const gain = offlineCtx.createGain();
-    gain.gain.value = peak > 0 ? 0.95 / peak : 1;
+    gain.gain.value = peak > 0 ? 0.71 / peak : 1;
     chain.connect(gain);
     chain = gain;
   }
