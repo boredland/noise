@@ -162,13 +162,22 @@ async function togglePreview() {
 
     source.connect(filterNode);
     filterNode.connect(ctx.destination);
+
+    const startTime = ctx.currentTime;
     source.start(0);
 
-    progressBar.classList.add("done");
     const previewDuration = previewSamples.length / SAMPLE_RATE;
-    setProgress(100, "Preview playing…", `${formatTime(previewDuration)} of filtered audio`);
 
-    previewState = { ctx, source, core };
+    const tickProgress = () => {
+      if (!previewState) return;
+      const elapsed = ctx.currentTime - startTime;
+      const pct = Math.min(100, (elapsed / previewDuration) * 100);
+      setProgress(pct, "Preview playing…", `${formatTime(elapsed)} / ${formatTime(previewDuration)}`);
+      previewState.raf = requestAnimationFrame(tickProgress);
+    };
+
+    previewState = { ctx, source, core, raf: null };
+    tickProgress();
 
     source.onended = () => stopPreview();
   } catch (err) {
@@ -180,6 +189,7 @@ async function togglePreview() {
 
 function stopPreview() {
   if (previewState) {
+    if (previewState.raf) cancelAnimationFrame(previewState.raf);
     try { previewState.source.stop(); } catch {}
     previewState.core.destroy();
     previewState.ctx.close();
