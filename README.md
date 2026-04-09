@@ -14,6 +14,10 @@ Browser-based audio noise reduction powered by [DeepFilterNet3](https://github.c
 - Model assets cached via Service Worker after first load (~17 MB)
 - Respects browser light/dark mode
 
+## Browser compatibility
+
+Works best in **Chrome** and **Safari**. Firefox is significantly slower for WASM workloads (~3x), resulting in much longer processing times. See [Firefox Bug 1539865](https://bugzilla.mozilla.org/show_bug.cgi?id=1539865) and [onnxruntime#10134](https://github.com/microsoft/onnxruntime/issues/10134) for details.
+
 ## Development
 
 ```sh
