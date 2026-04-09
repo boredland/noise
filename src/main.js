@@ -71,6 +71,7 @@ async function handleFile(file) {
   statusDetail.textContent = "";
   progressBar.style.width = "0%";
   progressBar.classList.remove("done");
+  progressBar.classList.add("indeterminate");
   progressSection.classList.add("visible");
 
   try {
@@ -81,8 +82,10 @@ async function handleFile(file) {
     levelSlider.disabled = false;
     previewBtn.disabled = false;
     processBtn.disabled = false;
+    progressBar.classList.remove("indeterminate");
     progressSection.classList.remove("visible");
   } catch (err) {
+    progressBar.classList.remove("indeterminate");
     console.error(err);
     showError(`Failed to analyze audio: ${err.message}`);
   }
