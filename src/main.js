@@ -179,6 +179,13 @@ function showError(msg) {
   progressSection.classList.remove("visible");
   previewBtn.disabled = false;
   processBtn.disabled = false;
+  setTitle(null);
+}
+
+const DEFAULT_TITLE = document.title;
+
+function setTitle(prefix) {
+  document.title = prefix ? `${prefix} ${DEFAULT_TITLE}` : DEFAULT_TITLE;
 }
 
 function setProgress(pct, label, detail) {
@@ -364,6 +371,7 @@ async function togglePreview() {
   processBtn.disabled = true;
   progressSection.classList.add("visible");
   progressBar.classList.remove("done");
+  setTitle("\u23F3");
   errorEl.classList.remove("visible");
 
   try {
@@ -440,6 +448,7 @@ function stopPreview() {
   previewBtn.disabled = !selectedFile;
   processBtn.disabled = !selectedFile;
   progressSection.classList.remove("visible");
+  setTitle(null);
 }
 
 async function processAudio() {
@@ -452,6 +461,7 @@ async function processAudio() {
   resultSection.classList.remove("visible");
   progressSection.classList.add("visible");
   progressBar.classList.remove("done");
+  setTitle("\u23F3");
 
   try {
     setProgress(0, "Decoding audio file…", "");
@@ -477,6 +487,7 @@ async function processAudio() {
 
     progressBar.classList.add("done");
     setProgress(100, "Done!", "");
+    setTitle("\u2705");
     downloadBtn.style.display = "";
     resultSection.classList.add("visible");
   } catch (err) {
