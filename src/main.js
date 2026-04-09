@@ -206,14 +206,17 @@ async function renderOffline(samples, onProgress) {
   return renderedBuffer;
 }
 
+let previewAbort = null;
+
 async function togglePreview() {
-  if (previewState) {
+  if (previewState || previewAbort) {
     stopPreview();
     return;
   }
 
   if (!selectedFile) return;
 
+  previewAbort = new AbortController();
   previewBtn.textContent = "Stop preview";
   processBtn.disabled = true;
   progressSection.classList.add("visible");
@@ -233,6 +236,8 @@ async function togglePreview() {
     const renderedBuffer = await renderOffline(previewSamples, (pct, detail) => {
       setProgress(pct, "Rendering preview…", detail);
     });
+
+    if (previewAbort?.signal.aborted) return;
 
     const previewDuration = previewSamples.length / SAMPLE_RATE;
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
@@ -256,6 +261,7 @@ async function togglePreview() {
 
     source.onended = () => stopPreview();
   } catch (err) {
+    if (previewAbort?.signal.aborted) return;
     console.error(err);
     stopPreview();
     showError(`Preview failed: ${err.message}`);
@@ -263,6 +269,10 @@ async function togglePreview() {
 }
 
 function stopPreview() {
+  if (previewAbort) {
+    previewAbort.abort();
+    previewAbort = null;
+  }
   if (previewState) {
     if (previewState.raf) cancelAnimationFrame(previewState.raf);
     try { previewState.source.stop(); } catch {}
