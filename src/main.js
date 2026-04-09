@@ -249,7 +249,7 @@ async function processAudio() {
     source.connect(filterNode);
     filterNode.connect(offlineCtx.destination);
 
-    const CHECKPOINT_INTERVAL = 5;
+    const CHECKPOINT_INTERVAL = 30;
     const checkpoints = Math.floor(duration / CHECKPOINT_INTERVAL);
     for (let i = 1; i <= checkpoints; i++) {
       const t = i * CHECKPOINT_INTERVAL;
